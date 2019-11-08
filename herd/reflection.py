@@ -1,0 +1,471 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, division, print_function, absolute_import
+import codecs
+import ast
+import sys
+import os
+import glob
+from distutils import sysconfig
+import json
+import re
+import pkgutil
+
+
+from .compat import *
+from .path import Filepath, Dirpath
+from .utils import get_runtime
+
+
+class Imports(set):
+    def __init__(self, filepath, encoding="UTF-8"):
+        super(Imports, self).__init__()
+
+        open_kwargs = dict(mode='r', errors='replace', encoding=encoding)
+        with codecs.open(filepath, **open_kwargs) as fp:
+            body = fp.read().strip()
+
+        self._find(body)
+
+    def _find(self, body):
+        # This is based on code from pout.reflect.Call._find_calls and
+        # endpoints.reflection.ReflectClass.get_info
+
+        def visit_Import(node):
+            self.add(node.names[0].name.split(".")[0])
+
+        def visit_ImportFrom(node):
+            # if node.module is missing it's a "from . import ..." statement
+            # if level > 0 it's a "from .submodule import ..." statement
+            if node.module is not None and node.level == 0:
+                self.add(node.module.split(".")[0])
+
+        #def generic_visit(node):
+        #    pout.v(node)
+
+        node_iter = ast.NodeVisitor()
+        node_iter.visit_Import = visit_Import
+        node_iter.visit_ImportFrom = visit_ImportFrom
+        #node_iter.generic_visit = generic_visit
+
+        node_iter.visit(ast.parse(body))
+
+
+class Dependencies(set):
+    def __init__(self, modulepath):
+        module_name = modulepath.split(".")[0]
+
+        super(Dependencies, self).__init__()
+
+        self.name, dependencies = self._resolve(module_name)
+        self.update(dependencies)
+
+    def _resolve(self, module_name):
+        # we only want to resolve dependencies if this is not in the standard library
+        name = module_name
+        ret = set()
+
+        std_modules = StdlibPackages.get_instance()
+        if module_name in std_modules:
+            name = std_modules[module_name]
+
+        else:
+            name = ""
+            site_modules = SitePackages.get_instance()
+            if module_name in site_modules:
+                name = site_modules[module_name]
+            else:
+                local_modules = LocalPackages.get_instance()
+                if module_name in local_modules:
+                    name = local_modules[module_name]
+
+            if name:
+                for require_name in name.requires():
+                    d = type(self)(require_name)
+                    # only add the dependency if it is a standard library module
+                    # and it actually exists, the dependency might not exist if
+                    # it was an optional package (pip extra)
+                    if not d.is_stdlib() and d.name:
+                        ret.add(d.name)
+                        ret.update(d)
+
+        pout.b(module_name)
+        pout.v(name, ret)
+        return name, ret
+
+#         if not self.is_stdlib(module_name):
+#             for p in sys.path:
+#                 if self.in_directory(p, module_name):
+#                     is_site, ret = self.find_site_package_dependencies(p, module_name)
+#                     if not is_site:
+#                         ret = self.find_local_package_dependencies(p, module_name)
+
+        return ret
+
+    def is_stdlib(self):
+        std_modules = StdlibPackages.get_instance()
+        return self.name in std_modules
+
+
+    def get_paths(self, basepath, module_name):
+        package_path = os.path.join(basepath, module_name)
+        module_path = os.path.join(basepath, "{}.py".format(module_name))
+        return package_path, module_path
+
+    def in_directory(self, dirname, module_name):
+        package_path, module_path = self.get_paths(dirname, module_name)
+        return os.path.isdir(package_path) or os.path.isfile(module_path)
+
+#     def is_stdlib(self, module_name):
+#         ret = True
+#         if module_name not in sys.builtin_module_names:
+#             stdlib_path = sysconfig.get_python_lib(standard_lib=True)
+#             ret = self.in_directory(stdlib_path, module_name)
+# 
+#         return ret
+
+    def get_contents(self, filepath, encoding="UTF-8"):
+        if encoding:
+            open_kwargs = dict(mode='r', errors='replace', encoding="UTF-8")
+            with codecs.open(filepath, **open_kwargs) as fp:
+                return fp.read()
+
+        else:
+            with open(filepath, mode="rb") as fp:
+                return fp.read()
+
+    def get_package_name(self, name):
+        """removes things like the semver version
+
+        :param name: string, the complete package name with things like semver
+        :returns: the actual package name as pypi sees it
+        """
+        m = re.match("^([0-9a-zA-Z_-]+)", name.strip())
+        return m.group(1)
+
+    def get_toplevel_name(self, infopath):
+        """module_name (eg, python-dateutil) needs to read *.dist-info/top_level.txt
+        to get the actual name (eg, dateutil)
+
+        :param infopath: string, the directory path the the .dist-info folder
+        :returns: the toplevel package name that scripts would import
+        """
+        filepath = os.path.join(infopath, "top_level.txt")
+        return self.get_contents(filepath).strip()
+
+    def find_site_package_dependencies(self, basedir, module_name):
+        is_site = False
+        ret = set()
+        ds = glob.glob(os.path.join(basedir, "{}*.dist-info".format(module_name)))
+        if ds:
+            is_site = True
+            for d in ds:
+                jsonpath = os.path.join(d, "metadata.json")
+                if os.path.isfile(jsonpath):
+                    json_d = json.loads(self.get_contents(jsonpath, encoding=""))
+
+                    for d2 in json_d.get("run_requires", []):
+                        for name in d2.get("requires", []):
+                            name = self.get_package_name(name)
+                            ret.add(self.get_toplevel_name(name))
+                            ret.update(self.find_dependencies(name))
+
+                else:
+                    txtpath = os.path.join(d, "METADATA")
+                    if os.path.isfile(jsonpath):
+                        lines = self.get_contents(filepath)
+                        for line in lines.splitlines(False):
+                            if line.startswith("Requires-Dist"):
+                                name = self.get_package_name(line.split(":")[1].strip())
+                                if name:
+                                    ret.add(self.get_toplevel_name(name))
+                                    ret.update(self.find_dependencies(name))
+
+        return is_site, ret
+
+    def find_local_package_dependencies(self, basedir, module_name):
+        ret = set()
+
+        package_path, module_path = self.get_paths(basedir, module_name)
+        if os.path.isfile(module_path):
+            im = Imports(module_path)
+            for mn in im:
+                ret.add(mn)
+                ret.update(self.find_dependencies(mn))
+
+        elif os.path.isdir(package_path):
+            for root_dir, dirs, files in os.walk(package_path, topdown=True):
+                if os.path.isfile(os.path.join(root_dir, "__init__.py")):
+                    for basename in files:
+                        if basename.endswith(".py"):
+                            filepath = os.path.join(root_dir, basename)
+                            im = Imports(filepath)
+                            for mn in im:
+                                ret.add(mn)
+                                ret.update(self.find_dependencies(mn))
+
+
+
+#                         if basename.endswith(".py") and not basename.startswith("__init__"):
+#                             relativedir = root_dir.replace(basedir, "")
+#                             modpath = relativedir.strip("/").replace("/", ".")
+#                             mn = os.path.splitext(basename)[0]
+#                             pout.v(relativedir, modpath, mn)
+
+#             pout.v(package_path)
+#             for module_info in pkgutil.walk_packages([package_path]):
+#                 pout.v(module_info[1])
+
+        return ret
+
+
+class Package(String):
+    @property
+    def filepath(self):
+        """always reteurns a filepath for the module, this could either be self.name.py
+        or __init__.py"""
+        p = self.path
+        if isinstance(p, Dirpath):
+            p = Filepath(p, "__init__.py")
+        return p
+#         name = self.name.replace(".", "/")
+#         fp = Filepath(self.basedir, name, ext="py")
+#         if not fp.exists():
+#             fp = Filepath(self.basedir, name, "__init__.py")
+#             if not fp.exists():
+#                 raise ValueError("Could not find path for {}".format(self.name))
+# 
+#         return fp
+
+    @property
+    def path(self):
+        """Returns the path for the module, this can be a directory or file"""
+        return self._find_path(self, self.basedir)
+
+    @classmethod
+    def _find_path(cls, name, basedir):
+        ret = ""
+        name = name.replace(".", "/")
+        p = Filepath(basedir, name, ext=".py")
+        if p.exists():
+            ret = p
+        else:
+            p = Dirpath(basedir, name)
+            if p.exists():
+                ret = p
+        return ret
+
+    def __new__(cls, name, basedir):
+        instance = super(Package, cls).__new__(cls, name)
+        instance.basedir = Dirpath(basedir)
+        return instance
+
+    def names(self):
+        return [self]
+
+    def requires(self):
+        return set()
+
+    def is_package(self):
+        """returns True if this package is a directory"""
+        p = self._find_path(self, self.basedir)
+        return isinstance(p, Dirpath)
+
+    def is_module(self):
+        """returns True if this package is a module file"""
+        return not self.is_package()
+
+    def submodules(self):
+        if self.is_package():
+            for root_dir, dirs, files in self.path:
+                relative_dir = root_dir.replace(self.basedir, "").strip("/")
+                modpath = relative_dir.replace("/", ".")
+                if Filepath(root_dir, "__init__.py").exists():
+                    if modpath != self:
+                        yield Package(modpath, self.basedir)
+
+                    for basename in files:
+                        if basename.endswith(".py") and basename != "__init__.py":
+                            fp = Filepath(basename)
+                            name = ".".join([modpath, fp.fileroot])
+                            yield Package(name, self.basedir)
+
+    def modules(self):
+        """like .submodules() put will also yield self"""
+        yield self
+        for sm in self.submodules():
+            yield sm
+
+
+class SitePackage(Package):
+    @classmethod
+    def _get_toplevel_names(cls, infopath):
+        """module_name (eg, python-dateutil) needs to read *.dist-info/top_level.txt
+        to get the actual name (eg, dateutil)
+
+        :param infopath: string, the directory path the the .dist-info folder
+        :returns: the toplevel package name that scripts would import
+        """
+        # https://setuptools.readthedocs.io/en/latest/formats.html#sources-txt-source-files-manifest
+        filepath = Filepath(infopath, "top_level.txt")
+        return [line.strip() for line in filepath]
+
+    @classmethod
+    def _get_pypi_names(cls, infopath):
+        m = re.match("^([0-9a-zA-Z_]+)", Dirpath(infopath).basename)
+        name = m.group(1)
+        return [name, name.replace("_", "-")]
+
+    @classmethod
+    def _get_semver_name(self, name):
+        """removes things like the semver version
+
+        :param name: string, the complete package name with things like semver
+        :returns: the actual package name as pypi sees it
+        """
+        m = re.match("^([0-9a-zA-Z_-]+)", name.strip())
+        return m.group(1)
+
+    def __new__(cls, infopath):
+        infopath = Dirpath(infopath)
+        basedir = infopath.dirname
+
+        # find the actual real name of the package from all our options
+        names = cls._get_toplevel_names(infopath)
+        for name in names:
+            p = cls._find_path(name, basedir)
+            if p:
+                break
+
+#         pout.b()
+#         pout.v(name)
+#         pout.v(infopath)
+        instance = super(SitePackage, cls).__new__(cls, name, basedir)
+        instance.infopath = infopath
+        return instance
+
+    def names(self):
+        return self._get_toplevel_names(self.infopath) + self._get_pypi_names(self.infopath)
+
+    def requires(self):
+        """returns the immediate defined dependencies for this package
+
+        this doesn't normalize the module name or anything
+
+        :returns: set, the required packages per configuration
+        """
+        ret = set()
+
+        jsonpath = Filepath(self.infopath, "metadata.json")
+        if jsonpath.exists():
+            json_d = json.loads(jsonpath.contents())
+
+            for d in json_d.get("run_requires", []):
+                for name in d.get("requires", []):
+                    ret.add(self._get_semver_name(name))
+
+        else:
+            txtpath = Filepath(self.infopath, "METADATA")
+            if txtpath.exists():
+                for line in txtpath:
+                    if line.startswith("Requires-Dist"):
+                        # TODO -- this line can have "extras == '...' info that
+                        # means this package is optional and might not be
+                        # installed
+                        name = self._get_semver_name(line.split(":")[1].strip())
+                        if name:
+                            ret.add(name)
+
+        return ret
+
+
+class LocalPackage(Package):
+    def requires(self):
+        ret = set()
+
+        for m in self.modules():
+            im = Imports(m.filepath)
+            ret.update(im)
+
+        return ret
+
+
+class Packages(dict):
+    instance = None
+
+    package_class = Package
+
+    @classmethod
+    def get_instance(cls, *args, **kwargs):
+        """get the singleton"""
+        if not cls.instance:
+            cls.instance = cls(*args, **kwargs)
+        return cls.instance
+
+    def __init__(self, *args, **kwargs):
+        self._readonly = False
+        super(Packages, self).__init__()
+        self.populate(*args, **kwargs)
+        self._readonly = True
+
+    def __setitem__(self, k, v):
+        if self._readonly:
+            raise NotImplementedError()
+        return super(Packages, self).__setitem__(k, v)
+
+    def pop(self, *args, **kwargs):
+        raise NotImplementedError()
+
+    setdefault = pop
+    update = pop
+    clear = pop
+    __delitem__ = pop
+
+    def _add_packages(self, path):
+        if path.exists():
+            for root_dir, dirs, files in path:
+                for basename in files:
+                    if basename.endswith(".py"):
+                        fp = Filepath(basename)
+                        name = fp.fileroot
+                        self[name] = self.package_class(name, root_dir)
+
+                for name in dirs:
+                    fp = Filepath(root_dir, name, "__init__.py")
+                    if fp.exists():
+                        self[String(name)] = self.package_class(name, root_dir)
+                break
+
+
+class StdlibPackages(Packages):
+    def populate(self):
+        for name in sys.builtin_module_names:
+            self[String(name)] = None
+
+        stdlib_path = Dirpath(sysconfig.get_python_lib(standard_lib=True))
+        self._add_packages(stdlib_path)
+
+
+class SitePackages(Packages):
+    package_class = SitePackage
+    def populate(self):
+        for basedir in sys.path:
+            infopaths = glob.glob(os.path.join(basedir, "*.dist-info"))
+            for infopath in infopaths:
+                p = SitePackage(infopath)
+                for name in p.names():
+                    self[name] = p
+
+
+class LocalPackages(Packages):
+    package_class = LocalPackage
+    def populate(self):
+        runtime_dir = "/{}".format(get_runtime())
+
+        for basedir in sys.path:
+            if runtime_dir in basedir: continue
+            if glob.glob(os.path.join(basedir, "*.dist-info")): continue
+
+            basedir = Dirpath(basedir)
+            self._add_packages(basedir)
+
+
