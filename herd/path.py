@@ -2,7 +2,7 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import codecs
-
+import tempfile
 
 from .compat import *
 
@@ -36,6 +36,12 @@ class Dirpath(Path):
     def __iter__(self):
         for root_dir, dirs, files in os.walk(self, topdown=True):
             yield root_dir, dirs, files
+
+
+class Tempdir(Dirpath):
+    def __new__(cls):
+        path = tempfile.mkdtemp(dir=tempfile.gettempdir())
+        return super(Path, cls).__new__(cls, path)
 
 
 class Filepath(Path):

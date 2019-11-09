@@ -7,11 +7,13 @@ import sys
 import inspect
 import os
 import re
-import tempfile
 from zipfile import ZipFile
 
 import boto3
 from botocore.exceptions import ClientError
+
+from ...path import Tempdir, Filepath
+from ...reflection import Dependencies
 
 
 logger = logging.getLogger(__name__)
@@ -241,7 +243,10 @@ class ApiGateway(AWS):
 
 
 class Role(AWS):
-    """Represent an AWS IAM role"""
+    """Represent an AWS IAM role
+
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam.html
+    """
     client_name = "iam"
 
     @property
@@ -254,13 +259,14 @@ class Role(AWS):
     def arn(self):
         return self.raw["Role"]["Arn"]
 
-    def __init__(self, name):
+    def __init__(self, name, description=""):
         """create a representation of the role at name
 
         :param name: string, the roles name
         """
         self.name = name
         self.policy_documents = {}
+        self.description = description
 #         if not self.exists():
 #             self.save()
 
@@ -285,8 +291,10 @@ class Role(AWS):
         }
 
         iam_client = self.client
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam.html#IAM.Client.create_role
         self.raw = iam_client.create_role(
             RoleName=self.name,
+            Description=self.description,
             **{i[0]: json.dumps(i[1]) for i in self.policy_documents.items()}
         )
 
@@ -324,7 +332,7 @@ class Lambda(AWS):
         region_name = self._region_name or None
         return boto3.client(self.client_name, region_name=region_name)
 
-    def __init__(self, filepath, role, dependencies=None, name="", region_name=""):
+    def __init__(self, filepath, role, name="", region_name=""):
         """create a representation of the lambda function that will run filepath
 
         :param filepath: string, the file path to a python file that will uploaded
@@ -332,20 +340,14 @@ class Lambda(AWS):
                 NAME(event, context)
             which is what lambda will invoke when ran
         :param role: Role, the role to use for this lambda function
-        :param dependencies: TBI
         :param name: string, if you want to give the lambda function a different
             name than the basename of the filepath
         :param region_name: if you want to use a different region name then the 
             default defined in aws config or AWS_DEFAULT_REGION
         """
-
-        # TODO -- get the dependencies by getting all the import statements from
-        # filepath
-
-        # TODO -- we could also do this with regex looking for def NAME(event, context):
-        self.loaded = None
-        self.filepath = filepath
-        self.dependencies = dependencies
+        # ??? -- we could also do this with regex looking for def NAME(event, context):
+        # but that would make getting the description harder
+        self.filepath = Filepath(filepath)
         self._region_name = region_name
         self.role = role
 
@@ -360,7 +362,7 @@ class Lambda(AWS):
                     self.description = inspect.getdoc(v)
                     break
 
-        self.module_name = os.path.splitext(os.path.basename(filepath))[0]
+        self.module_name = self.filepath.fileroot
 
         # name can use only letters, numbers, hyphens, or underscores with no spaces
         if name:
@@ -369,11 +371,22 @@ class Lambda(AWS):
         else:
             self.name = self.module_name
 
-        self.load()
-
     def _load(self):
         client = self.client
         return client.get_function(FunctionName=self.name)
+
+    def bundle(self):
+        self.basedir = Tempdir()
+        self.zipfilepath = os.path.join(self.basedir, "lambda.zip")
+
+        d = Dependencies(self.filepath)
+        pout.v(d)
+        return
+
+        with ZipFile(self.zipfilepath, 'w') as z:
+            # TODO test with full filepath for filepath to make sure it still
+            # puts the file at the top level of the zipfile
+            z.write(self.filepath)
 
     def save(self):
         client = self.client
@@ -381,10 +394,6 @@ class Lambda(AWS):
         self.zipfilepath = os.path.join(self.basedir, "lambda.zip")
         role = self.role
 
-        with ZipFile(self.zipfilepath, 'w') as z:
-            # TODO test with full filepath for filepath to make sure it still
-            # puts the file at the top level of the zipfile
-            z.write(self.filepath)
 
         with open(self.zipfilepath, 'rb') as f:
             zipped_code = f.read()

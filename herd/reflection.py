@@ -51,7 +51,55 @@ class Imports(set):
 
 
 class Dependencies(set):
-    def __init__(self, modulepath):
+    def __init__(self, filepath):
+        self.filepath = Filepath(filepath)
+
+        standard_modules = StandardPackages()
+        site_modules = SitePackages()
+        local_modules = LocalPackages()
+
+        im = Imports(self.filepath)
+        for modulepath in im:
+            self.update(self._resolve(
+                modulepath,
+                standard_modules,
+                site_modules,
+                local_modules
+            ))
+
+    def _resolve(self, modulepath, standard_modules, site_modules, local_modules):
+        # we only want to resolve dependencies if this is not in the standard library
+        module_name = modulepath.split(".")[0]
+
+        ret = set()
+
+        if module_name not in standard_modules:
+            name = ""
+            if module_name in site_modules:
+                name = site_modules[module_name]
+            else:
+                if module_name in local_modules:
+                    name = local_modules[module_name]
+
+            if name:
+                ret.add(name)
+                for require_modulepath in name.requires():
+                    ret.update(self._resolve(
+                        require_modulepath,
+                        standard_modules,
+                        site_modules,
+                        local_modules
+                    ))
+
+        #pout.b(module_name)
+        #pout.v(name, ret)
+        return ret
+
+
+
+
+
+    def x__init__(self, modulepath):
         module_name = modulepath.split(".")[0]
 
         super(Dependencies, self).__init__()
@@ -59,7 +107,7 @@ class Dependencies(set):
         self.name, dependencies = self._resolve(module_name)
         self.update(dependencies)
 
-    def _resolve(self, module_name):
+    def _resolve2(self, module_name):
         # we only want to resolve dependencies if this is not in the standard library
         name = module_name
         ret = set()
@@ -88,134 +136,14 @@ class Dependencies(set):
                         ret.add(d.name)
                         ret.update(d)
 
-        pout.b(module_name)
-        pout.v(name, ret)
+        #pout.b(module_name)
+        #pout.v(name, ret)
         return name, ret
 
-#         if not self.is_stdlib(module_name):
-#             for p in sys.path:
-#                 if self.in_directory(p, module_name):
-#                     is_site, ret = self.find_site_package_dependencies(p, module_name)
-#                     if not is_site:
-#                         ret = self.find_local_package_dependencies(p, module_name)
-
-        return ret
 
     def is_stdlib(self):
         std_modules = StdlibPackages.get_instance()
         return self.name in std_modules
-
-
-    def get_paths(self, basepath, module_name):
-        package_path = os.path.join(basepath, module_name)
-        module_path = os.path.join(basepath, "{}.py".format(module_name))
-        return package_path, module_path
-
-    def in_directory(self, dirname, module_name):
-        package_path, module_path = self.get_paths(dirname, module_name)
-        return os.path.isdir(package_path) or os.path.isfile(module_path)
-
-#     def is_stdlib(self, module_name):
-#         ret = True
-#         if module_name not in sys.builtin_module_names:
-#             stdlib_path = sysconfig.get_python_lib(standard_lib=True)
-#             ret = self.in_directory(stdlib_path, module_name)
-# 
-#         return ret
-
-    def get_contents(self, filepath, encoding="UTF-8"):
-        if encoding:
-            open_kwargs = dict(mode='r', errors='replace', encoding="UTF-8")
-            with codecs.open(filepath, **open_kwargs) as fp:
-                return fp.read()
-
-        else:
-            with open(filepath, mode="rb") as fp:
-                return fp.read()
-
-    def get_package_name(self, name):
-        """removes things like the semver version
-
-        :param name: string, the complete package name with things like semver
-        :returns: the actual package name as pypi sees it
-        """
-        m = re.match("^([0-9a-zA-Z_-]+)", name.strip())
-        return m.group(1)
-
-    def get_toplevel_name(self, infopath):
-        """module_name (eg, python-dateutil) needs to read *.dist-info/top_level.txt
-        to get the actual name (eg, dateutil)
-
-        :param infopath: string, the directory path the the .dist-info folder
-        :returns: the toplevel package name that scripts would import
-        """
-        filepath = os.path.join(infopath, "top_level.txt")
-        return self.get_contents(filepath).strip()
-
-    def find_site_package_dependencies(self, basedir, module_name):
-        is_site = False
-        ret = set()
-        ds = glob.glob(os.path.join(basedir, "{}*.dist-info".format(module_name)))
-        if ds:
-            is_site = True
-            for d in ds:
-                jsonpath = os.path.join(d, "metadata.json")
-                if os.path.isfile(jsonpath):
-                    json_d = json.loads(self.get_contents(jsonpath, encoding=""))
-
-                    for d2 in json_d.get("run_requires", []):
-                        for name in d2.get("requires", []):
-                            name = self.get_package_name(name)
-                            ret.add(self.get_toplevel_name(name))
-                            ret.update(self.find_dependencies(name))
-
-                else:
-                    txtpath = os.path.join(d, "METADATA")
-                    if os.path.isfile(jsonpath):
-                        lines = self.get_contents(filepath)
-                        for line in lines.splitlines(False):
-                            if line.startswith("Requires-Dist"):
-                                name = self.get_package_name(line.split(":")[1].strip())
-                                if name:
-                                    ret.add(self.get_toplevel_name(name))
-                                    ret.update(self.find_dependencies(name))
-
-        return is_site, ret
-
-    def find_local_package_dependencies(self, basedir, module_name):
-        ret = set()
-
-        package_path, module_path = self.get_paths(basedir, module_name)
-        if os.path.isfile(module_path):
-            im = Imports(module_path)
-            for mn in im:
-                ret.add(mn)
-                ret.update(self.find_dependencies(mn))
-
-        elif os.path.isdir(package_path):
-            for root_dir, dirs, files in os.walk(package_path, topdown=True):
-                if os.path.isfile(os.path.join(root_dir, "__init__.py")):
-                    for basename in files:
-                        if basename.endswith(".py"):
-                            filepath = os.path.join(root_dir, basename)
-                            im = Imports(filepath)
-                            for mn in im:
-                                ret.add(mn)
-                                ret.update(self.find_dependencies(mn))
-
-
-
-#                         if basename.endswith(".py") and not basename.startswith("__init__"):
-#                             relativedir = root_dir.replace(basedir, "")
-#                             modpath = relativedir.strip("/").replace("/", ".")
-#                             mn = os.path.splitext(basename)[0]
-#                             pout.v(relativedir, modpath, mn)
-
-#             pout.v(package_path)
-#             for module_info in pkgutil.walk_packages([package_path]):
-#                 pout.v(module_info[1])
-
-        return ret
 
 
 class Package(String):
@@ -227,14 +155,6 @@ class Package(String):
         if isinstance(p, Dirpath):
             p = Filepath(p, "__init__.py")
         return p
-#         name = self.name.replace(".", "/")
-#         fp = Filepath(self.basedir, name, ext="py")
-#         if not fp.exists():
-#             fp = Filepath(self.basedir, name, "__init__.py")
-#             if not fp.exists():
-#                 raise ValueError("Could not find path for {}".format(self.name))
-# 
-#         return fp
 
     @property
     def path(self):
@@ -336,9 +256,6 @@ class SitePackage(Package):
             if p:
                 break
 
-#         pout.b()
-#         pout.v(name)
-#         pout.v(infopath)
         instance = super(SitePackage, cls).__new__(cls, name, basedir)
         instance.infopath = infopath
         return instance
@@ -436,13 +353,13 @@ class Packages(dict):
                 break
 
 
-class StdlibPackages(Packages):
+class StandardPackages(Packages):
     def populate(self):
         for name in sys.builtin_module_names:
             self[String(name)] = None
 
-        stdlib_path = Dirpath(sysconfig.get_python_lib(standard_lib=True))
-        self._add_packages(stdlib_path)
+        path = Dirpath(sysconfig.get_python_lib(standard_lib=True))
+        self._add_packages(path)
 
 
 class SitePackages(Packages):

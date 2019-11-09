@@ -2,7 +2,7 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 
 
-from interface.aws import Role, Lambda, ApiGateway
+from .interface.aws import Role, Lambda, ApiGateway
 
 
 class Serverless(object):
