@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
+from zipfile import ZipFile
 
 import testdata
 
+from herd.compat import *
 from herd.serverless.interface.aws import (
     Role,
     Lambda,
@@ -17,8 +19,6 @@ class TestCase(testdata.TestCase):
             "but herd will re-create it if the unit tests are ran again",
         ])
 
-        pout.v(desc)
-
         r = Role("herd-unittests", desc)
         #r.save()
         return r
@@ -26,9 +26,9 @@ class TestCase(testdata.TestCase):
 
 class LambdaTest(TestCase):
     def test_bundle_dependencies(self):
-        m = testdata.create_module(contents="")
+        m = testdata.create_module(contents="import sys, os")
 
-        filepath = testdata.create_file("lambda-bundle-dependencies.py", contents=[
+        filepath = testdata.create_file(testdata.get_filename("py"), contents=[
             "import boto3",
             "import {}".format(m),
             "import email",
@@ -39,9 +39,51 @@ class LambdaTest(TestCase):
 
         l = Lambda(filepath, role=self.get_role())
 
-        l.bundle()
+        zip_path = l.bundle()
+        with testdata.capture(True) as c:
+            with ZipFile(zip_path, 'r') as z:
+                z.printdir()
+
+        self.assertTrue(filepath.basename in c)
+        self.assertTrue(m in c)
+        self.assertTrue("boto3" in c)
 
 
+    def test_crud(self):
+        """!!! This writes to AWS"""
+        role = self.get_role()
+        role.save()
 
-    # TODO -- test local module with the same name as sys module
+        m = testdata.create_module(contents="import sys, os")
+        filename = testdata.get_filename("py")
+        contents = [
+            "import testdata",
+            "import json",
+            "import {}".format(m),
+            "",
+            "def handler(event, context):",
+            "    '''herd unit test function, this can be safely deleted'''",
+            "    return {",
+            "        'statusCode': 200,",
+            "        'body': \"1\"",
+            "    }",
+        ]
+
+        filepath = testdata.create_file(filename, contents=contents)
+
+        l = Lambda(filepath, role=role)
+
+        l.save()
+        r = l.run()
+        self.assertEqual(200, r["statusCode"])
+        self.assertEqual("1", r["body"])
+
+        contents[-2] = "        'body': \"2\""
+        filepath.replace(contents)
+        l.save()
+        r = l.run()
+        self.assertEqual(200, r["statusCode"])
+        self.assertEqual("2", r["body"])
+
+        l.delete()
 

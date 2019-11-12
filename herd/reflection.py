@@ -96,56 +96,6 @@ class Dependencies(set):
         return ret
 
 
-
-
-
-    def x__init__(self, modulepath):
-        module_name = modulepath.split(".")[0]
-
-        super(Dependencies, self).__init__()
-
-        self.name, dependencies = self._resolve(module_name)
-        self.update(dependencies)
-
-    def _resolve2(self, module_name):
-        # we only want to resolve dependencies if this is not in the standard library
-        name = module_name
-        ret = set()
-
-        std_modules = StdlibPackages.get_instance()
-        if module_name in std_modules:
-            name = std_modules[module_name]
-
-        else:
-            name = ""
-            site_modules = SitePackages.get_instance()
-            if module_name in site_modules:
-                name = site_modules[module_name]
-            else:
-                local_modules = LocalPackages.get_instance()
-                if module_name in local_modules:
-                    name = local_modules[module_name]
-
-            if name:
-                for require_name in name.requires():
-                    d = type(self)(require_name)
-                    # only add the dependency if it is a standard library module
-                    # and it actually exists, the dependency might not exist if
-                    # it was an optional package (pip extra)
-                    if not d.is_stdlib() and d.name:
-                        ret.add(d.name)
-                        ret.update(d)
-
-        #pout.b(module_name)
-        #pout.v(name, ret)
-        return name, ret
-
-
-    def is_stdlib(self):
-        std_modules = StdlibPackages.get_instance()
-        return self.name in std_modules
-
-
 class Package(String):
     @property
     def filepath(self):
@@ -307,16 +257,16 @@ class LocalPackage(Package):
 
 
 class Packages(dict):
-    instance = None
+    #instance = None
 
     package_class = Package
 
-    @classmethod
-    def get_instance(cls, *args, **kwargs):
-        """get the singleton"""
-        if not cls.instance:
-            cls.instance = cls(*args, **kwargs)
-        return cls.instance
+#     @classmethod
+#     def get_instance(cls, *args, **kwargs):
+#         """get the singleton"""
+#         if not cls.instance:
+#             cls.instance = cls(*args, **kwargs)
+#         return cls.instance
 
     def __init__(self, *args, **kwargs):
         self._readonly = False

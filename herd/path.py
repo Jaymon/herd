@@ -3,6 +3,9 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import os
 import codecs
 import tempfile
+from distutils import dir_util
+import shutil
+from zipfile import ZipFile
 
 from .compat import *
 
@@ -37,10 +40,29 @@ class Dirpath(Path):
         for root_dir, dirs, files in os.walk(self, topdown=True):
             yield root_dir, dirs, files
 
+    def copy_to(self, dest_path):
+        """copy self to dest_path"""
+        source_path = self
+        # https://stackoverflow.com/a/15034373/5006
+        dir_util.copy_tree(source_path, dest_path, update=1)
+
+    def zip_to(self, dest_path):
+        if dest_path.endswith(".zip"):
+            dest_path = os.path.splitext(dest_path)[0]
+        # https://docs.python.org/3/library/shutil.html#shutil.make_archive
+        # https://stackoverflow.com/a/25650295/5006
+        return shutil.make_archive(dest_path, 'zip', self)
+
 
 class Tempdir(Dirpath):
-    def __new__(cls):
-        path = tempfile.mkdtemp(dir=tempfile.gettempdir())
+    def __new__(cls, *args, **kwargs):
+        prefix = ""
+        if args:
+            prefix = os.path.join(*args)
+        if prefix:
+            prefix += "-"
+        basedir = kwargs["dir"] if "dir" in kwargs else tempfile.gettempdir()
+        path = tempfile.mkdtemp(prefix=prefix, dir=basedir)
         return super(Path, cls).__new__(cls, path)
 
 
@@ -76,3 +98,12 @@ class Filepath(Path):
 
     def exists(self):
         return os.path.isfile(self)
+
+    def copy_to(self, dest_path):
+        r = shutil.copy(self, dest_path)
+
+    def zip_to(self, dest_path):
+        with ZipFile(dest_path, 'w') as z:
+            z.write(self)
+        return dest_path
+

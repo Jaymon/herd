@@ -7,12 +7,11 @@ import sys
 import inspect
 import os
 import re
-from zipfile import ZipFile
 
 import boto3
 from botocore.exceptions import ClientError
 
-from ...path import Tempdir, Filepath
+from ...path import Tempdir, Filepath, Path
 from ...reflection import Dependencies
 
 
@@ -274,29 +273,30 @@ class Role(AWS):
         return self.client.get_role(RoleName=self.name)
 
     def save(self):
-        self.policy_documents["AssumeRolePolicyDocument"] = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                "Effect": "Allow",
-                "Principal": {
-                    "Service": [
-                        "lambda.amazonaws.com",
-                        "apigateway.amazonaws.com"
-                    ]
-                },
-                "Action": "sts:AssumeRole"
-                }
-            ]
-        }
+        if not self.exists():
+            self.policy_documents["AssumeRolePolicyDocument"] = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Service": [
+                            "lambda.amazonaws.com",
+                            "apigateway.amazonaws.com"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                    }
+                ]
+            }
 
-        iam_client = self.client
-        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam.html#IAM.Client.create_role
-        self.raw = iam_client.create_role(
-            RoleName=self.name,
-            Description=self.description,
-            **{i[0]: json.dumps(i[1]) for i in self.policy_documents.items()}
-        )
+            iam_client = self.client
+            # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam.html#IAM.Client.create_role
+            self.raw = iam_client.create_role(
+                RoleName=self.name,
+                Description=self.description,
+                **{i[0]: json.dumps(i[1]) for i in self.policy_documents.items()}
+            )
 
     def delete(self):
         """Delete the IAM role
@@ -376,26 +376,25 @@ class Lambda(AWS):
         return client.get_function(FunctionName=self.name)
 
     def bundle(self):
-        self.basedir = Tempdir()
-        self.zipfilepath = os.path.join(self.basedir, "lambda.zip")
+        basedir = Tempdir("lambda")
+        #zip_filepath = os.path.join(basedir, "lambda.zip")
+        bundle_dir = Tempdir("bundle", dir=basedir)
+
+        self.filepath.copy_to(Path(bundle_dir, self.filepath.basename))
 
         d = Dependencies(self.filepath)
-        pout.v(d)
-        return
+        for p in d:
+            p.path.copy_to(Path(bundle_dir, p.path.basename))
 
-        with ZipFile(self.zipfilepath, 'w') as z:
-            # TODO test with full filepath for filepath to make sure it still
-            # puts the file at the top level of the zipfile
-            z.write(self.filepath)
+        logger.debug("Bundled lambda function to {}".format(bundle_dir))
+        return bundle_dir.zip_to(Filepath(basedir, "lambda.zip"))
 
     def save(self):
-        client = self.client
-        self.basedir = tempfile.mkdtemp(dir=tempfile.gettempdir())
-        self.zipfilepath = os.path.join(self.basedir, "lambda.zip")
         role = self.role
+        client = self.client
 
-
-        with open(self.zipfilepath, 'rb') as f:
+        zipfilepath = self.bundle()
+        with open(zipfilepath, 'rb') as f:
             zipped_code = f.read()
 
         if self.exists():
@@ -412,8 +411,8 @@ class Lambda(AWS):
                 Runtime=self.runtime,
                 Role=role.arn,
                 Handler=self.handler,
-                timeout=self.timeout,
-                description=self.description,
+                Timeout=self.timeout,
+                Description=self.description,
             )
 
         else:
@@ -428,19 +427,27 @@ class Lambda(AWS):
                     "ZipFile": zipped_code
                 },
                 Timeout=self.timeout,
-                description=self.description,
+                Description=self.description,
                 #Environment=dict(Variables=env_variables),
             )
 
             self.raw = res
 
     def run(self, **kwargs):
+        ret = {}
+
         client = self.client
-        return client.invoke(
+        res = client.invoke(
             FunctionName=self.name,
-            InvocationType='Event',
+            InvocationType='RequestResponse',
             Payload=json.dumps(kwargs),
         )
+
+        if res["ResponseMetadata"]["HTTPStatusCode"] == 200:
+            ret = json.load(res["Payload"])
+
+        return ret
+
 
     def delete(self):
         """delete the lambda function
