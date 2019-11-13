@@ -2,25 +2,33 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 
 
-from .interface.aws import Role, Lambda, ApiGateway
+from .interface.aws import Role, Lambda, ApiGateway, Region
 
 
-class Serverless(object):
-    def __init__(self, filepath, role_name, stage, region_name=""):
+class Function(object):
+    def __init__(self, filepath, role_name="herd-lambda-role", api_name="herd-lambda-api", stage="DEFAULT", region_name=""):
+
+        region_name = Region(region_name)
 
         role = Role(role_name)
-        if not role.exists():
-            role.save()
+        role.save()
+
+        # TODO -- we might have to delay until the IAM role propogates if it
+        # creates the role, the first time running this I got this error:
+        # botocore.errorfactory.InvalidParameterValueException: An error occurred
+        # (InvalidParameterValueException) when calling the CreateFunction operation:
+        # The role defined for the function cannot be assumed by Lambda
+        #
+        # but it worked the second time it was ran
 
         func = Lambda(filepath, role=role, region_name=region_name)
         func.save()
 
-        api = ApiGateway(func, stage=stage)
+        api = ApiGateway(api_name, region_name=region_name)
         api.save()
 
-
-        # TODO -- get the dependencies by getting all the import statements from
-        # filepath
-
-
+        self.url = api.add_lambda(func, stage=stage)
+        self.api = api
+        self.func = func
+        self.role = role
 
