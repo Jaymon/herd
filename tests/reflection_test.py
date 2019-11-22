@@ -7,7 +7,7 @@ import testdata
 from herd.reflection import (
     Imports,
     Dependencies,
-    StdlibPackages,
+    StandardPackages,
     SitePackages,
     LocalPackages
 )
@@ -95,9 +95,9 @@ class DependenciesTest(TestCase):
         self.assertEqual(d.name, d2.name)
 
 
-class StdlibPackagesTest(TestCase):
+class StandardPackagesTest(TestCase):
     def test_create(self):
-        s = StdlibPackages()
+        s = StandardPackages()
 
         for modpath in ["sys", "os", "email"]:
             self.assertTrue(modpath in s, modpath)
@@ -108,7 +108,7 @@ class SitePackagesTest(TestCase):
         self.skip_test()
         s1 = SitePackages()
         #pout.v(s)
-        s2 = StdlibPackages()
+        s2 = StandardPackages()
         #pout.v(s)
 
         l = list(s1.keys()) + list(s2.keys())

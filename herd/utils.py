@@ -77,9 +77,12 @@ class Environ(NormalizeDict):
 
 class EnvironParser(UnknownParser):
     def __init__(self, args):
-        super(Environ, self).__init__(args)
+        super(EnvironParser, self).__init__(args)
 
         for k in list(self.keys()):
-            if not re.match(r"^[A-Z0-9_-]+$", k):
+            if re.match(r"^[A-Z0-9_-]+$", k):
+                if len(self[k]) == 1:
+                    self[k] = self[k][0]
+            else:
                 del self[k]
 
