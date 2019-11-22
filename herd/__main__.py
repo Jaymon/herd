@@ -7,7 +7,7 @@ import sys
 import boto3
 
 from herd.compat import *
-from herd.utils import EnvironParser
+from herd.utils import EnvironParser, Environ
 from herd.serverless import Function, Region
 from herd import __version__
 
@@ -36,6 +36,13 @@ def main_info(args, environ):
     creds = s.get_credentials()
     if creds.access_key and creds.secret_key:
         logger.info("Amazon AWS access and secret keys were found")
+
+    if environ:
+        logger.info("")
+        logger.info("Environ parsed from command line:")
+        environ = Environ(environ)
+        for k, v in environ.items():
+            logger.info("\t{} = {}".format(k, v))
 
 
 def main_function(args, environ):

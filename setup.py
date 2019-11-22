@@ -48,7 +48,7 @@ setup(
     ],
     entry_points = {
         'console_scripts': [
-            '{} = {}:main'.format(name, name),
+            '{} = {}.__main__:main'.format(name, name),
         ],
     },
     **kwargs
