@@ -53,6 +53,13 @@ export AWS_DEFAULT_REGION="us-west-1"
     
 That's it!
 
+### Environment variables
+
+You can pass in environment variables that your lambda function would have access to by defining them on the command line:
+
+	$ herd function-add foo.py --ENV_NAME_1=value1 --ENV_NAME_2=value2
+
+
 ----------------------------------------------
 
 Herd is still in an alpha state and as we start using it for some of our infrastructure I'm sure it will change here and there. We also have more functionality planned for it in the future.

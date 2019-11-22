@@ -7,6 +7,7 @@ import sys
 import boto3
 
 from herd.compat import *
+from herd.utils import EnvironParser
 from herd.serverless import Function, Region
 from herd import __version__
 
@@ -16,7 +17,7 @@ logging.basicConfig(format="%(message)s", level=level, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 
-def main_info(args):
+def main_info(args, environ):
     r = ""
     try:
         r = Region("")
@@ -37,13 +38,14 @@ def main_info(args):
         logger.info("Amazon AWS access and secret keys were found")
 
 
-def main_function(args):
+def main_function(args, environ):
     func = Function(
         filepath=args.filepaths[0],
+        environ=environ,
         role_name=args.role_name,
         api_name=args.api_name,
         stage=args.stage,
-        region_name=args.region_name
+        region_name=args.region_name,
     )
 
     logger.info("Function {} available at url: {}".format(func.func.name, func.url))
@@ -110,14 +112,15 @@ def main():
     )
     subparser.set_defaults(func=main_function)
 
-    args = parser.parse_args()
+    args, unknown_args = parser.parse_known_args()
+    environ = EnvironParser(unknown_args)
 
     # mess with logging
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
-    code = args.func(args)
-    sys.exit(code)
+    code = args.func(args, environ)
+    sys.exit(code or 0)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ kwargs["long_description"] = read('README.md')
 kwargs["long_description_content_type"] = "text/markdown"
 
 kwargs["tests_require"] = ["testdata"]
-kwargs["install_requires"] = ["boto3"]
+kwargs["install_requires"] = ["boto3", "captain"]
 
 
 setup(
@@ -50,7 +50,7 @@ setup(
         'console_scripts': [
             '{} = {}:main'.format(name, name),
         ],
-    }
+    },
     **kwargs
 )
 

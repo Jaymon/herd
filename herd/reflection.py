@@ -31,7 +31,8 @@ class Imports(set):
         # endpoints.reflection.ReflectClass.get_info
 
         def visit_Import(node):
-            self.add(node.names[0].name.split(".")[0])
+            for name in node.names:
+                self.add(name.name.split(".")[0])
 
         def visit_ImportFrom(node):
             # if node.module is missing it's a "from . import ..." statement
@@ -304,7 +305,12 @@ class Packages(dict):
 
 
 class StandardPackages(Packages):
+    """The packages that are part of the python distribution, the standard library
+
+    https://stackoverflow.com/a/46441687/5006
+    """
     def populate(self):
+        # https://stackoverflow.com/a/4927129/5006
         for name in sys.builtin_module_names:
             self[String(name)] = None
 
@@ -313,6 +319,10 @@ class StandardPackages(Packages):
 
 
 class SitePackages(Packages):
+    """The packages found in things like the site-packages directory
+
+    https://stackoverflow.com/a/6464112/5006
+    """
     package_class = SitePackage
     def populate(self):
         for basedir in sys.path:

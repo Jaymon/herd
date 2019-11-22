@@ -6,7 +6,15 @@ from .interface.aws import Role, Lambda, ApiGateway, Region
 
 
 class Function(object):
-    def __init__(self, filepath, role_name="herd-lambda-role", api_name="herd-lambda-api", stage="DEFAULT", region_name=""):
+    def __init__(
+        self,
+        filepath,
+        environ=None,
+        role_name="herd-lambda-role",
+        api_name="herd-lambda-api",
+        stage="DEFAULT",
+        region_name=""
+    ):
 
         region_name = Region(region_name)
 
@@ -21,7 +29,7 @@ class Function(object):
         #
         # but it worked the second time it was ran
 
-        func = Lambda(filepath, role=role, region_name=region_name)
+        func = Lambda(filepath, role=role, environ=environ, region_name=region_name)
         func.save()
 
         api = ApiGateway(api_name, region_name=region_name)

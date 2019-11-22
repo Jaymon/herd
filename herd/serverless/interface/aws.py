@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 from ...compat import *
 from ...path import Tempdir, Filepath, Path
 from ...reflection import Dependencies
+from ...utils import Environ
 
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,7 @@ class Role(AWS):
 #             self.save()
 
     def _load(self):
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam.html#IAM.Client.get_role
         return self.client.get_role(RoleName=self.name)
 
     def save(self):
@@ -384,7 +386,10 @@ class ApiGateway(AWS):
 
 
 class Lambda(AWS):
-    """Represents a lambda function"""
+    """Represents a lambda function
+
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/lambda.html
+    """
 
     timeout = 300 # Maximum allowable timeout
 
@@ -403,7 +408,7 @@ class Lambda(AWS):
     def handler(self):
         return "{}.{}".format(self.module_name, self.function_name)
 
-    def __init__(self, filepath, role, name="", region_name=""):
+    def __init__(self, filepath, role, environ=None, name="", region_name=""):
         """create a representation of the lambda function that will run filepath
 
         :param filepath: string, the file path to a python file that will uploaded
@@ -411,6 +416,7 @@ class Lambda(AWS):
                 NAME(event, context)
             which is what lambda will invoke when ran
         :param role: Role, the role to use for this lambda function
+        :param environ: dict, the environment variables this lambda will use
         :param name: string, if you want to give the lambda function a different
             name than the basename of the filepath
         :param region_name: if you want to use a different region name then the 
@@ -421,6 +427,7 @@ class Lambda(AWS):
         self.filepath = Filepath(filepath)
         self._region_name = region_name
         self.role = role
+        self.environ = Environ(environ or {})
 
         module = runpy.run_path(filepath)
         for n, v in module.items():
@@ -444,6 +451,7 @@ class Lambda(AWS):
 
     def _load(self):
         client = self.client
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/lambda.html#Lambda.Client.get_function
         return client.get_function(FunctionName=self.name)
 
     def bundle(self):
@@ -484,6 +492,7 @@ class Lambda(AWS):
                 Handler=self.handler,
                 Timeout=self.timeout,
                 Description=self.description,
+                Environment={"Variables": self.environ},
             )
 
         else:
@@ -499,7 +508,7 @@ class Lambda(AWS):
                 },
                 Timeout=self.timeout,
                 Description=self.description,
-                #Environment=dict(Variables=env_variables),
+                Environment={"Variables": self.environ},
             )
 
             self.raw = res
@@ -514,6 +523,7 @@ class Lambda(AWS):
             Payload=json.dumps(kwargs),
         )
 
+        # https://stackoverflow.com/a/39456752/5006
         if res["ResponseMetadata"]["HTTPStatusCode"] == 200:
             ret = json.load(res["Payload"])
 
