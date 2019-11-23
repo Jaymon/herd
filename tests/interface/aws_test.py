@@ -8,7 +8,8 @@ from herd.compat import *
 from herd.serverless.interface.aws import (
     Role,
     Lambda,
-    ApiGateway
+    ApiGateway,
+    Description,
 )
 
 
@@ -172,4 +173,11 @@ class LambdaTest(TestCase):
 
         r = l.run()
         self.assertEqual("1", r["body"]["environ"]["foo"])
+
+
+class DescriptionTest(TestCase):
+    def test_truncate(self):
+        """turns out aws descriptions can only be 256 characters"""
+        d = Description(testdata.get_words(200))
+        self.assertGreater(256, len(d))
 

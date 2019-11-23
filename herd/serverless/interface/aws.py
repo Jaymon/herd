@@ -20,6 +20,16 @@ from ...utils import Environ
 logger = logging.getLogger(__name__)
 
 
+class Description(String):
+    def __new__(cls, val="", encoding="UTF-8"):
+        val = String(val)
+        # 'description' failed to satisfy constraint: Member must have length less than or equal to 256
+        if len(val) > 256:
+            val = val[:252] + "..."
+
+        return super(Description, cls).__new__(cls, val, encoding=encoding)
+
+
 class AWS(object):
     """Base class that standardizes the interface for all the services"""
 
@@ -491,7 +501,7 @@ class Lambda(AWS):
                 Role=role.arn,
                 Handler=self.handler,
                 Timeout=self.timeout,
-                Description=self.description,
+                Description=Description(self.description),
                 Environment={"Variables": self.environ},
             )
 
@@ -507,7 +517,7 @@ class Lambda(AWS):
                     "ZipFile": zipped_code
                 },
                 Timeout=self.timeout,
-                Description=self.description,
+                Description=Description(self.description),
                 Environment={"Variables": self.environ},
             )
 
