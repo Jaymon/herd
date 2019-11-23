@@ -5,6 +5,7 @@ import logging
 import sys
 
 import boto3
+from captain import echo
 
 from herd.compat import *
 from herd.utils import EnvironParser, Environ
@@ -45,6 +46,24 @@ def main_info(args, environ):
             logger.info("\t{} = {}".format(k, v))
 
 
+def main_info_roles(args, environ):
+    """print out all the iam roles the herd client can see"""
+    iam = boto3.client("iam")
+    roles = iam.list_roles()
+    if "Roles" in roles:
+        echo.table((String(r["RoleName"]), String(r.get("Description", ""))) for r in roles["Roles"])
+
+
+
+#         lines = []
+#         for role in roles["Roles"]:
+#             lines.append("{}\t\t{}".format(
+#                 String(role["RoleName"]),
+#                 String(role.get("Description", ""))
+#             ))
+#         echo.table(
+
+
 def main_function(args, environ):
     func = Function(
         filepath=args.filepaths[0],
@@ -81,6 +100,17 @@ def main():
     )
     subparser.set_defaults(func=main_info)
 
+    # $ herd info-roles
+    desc = "Print out all the roles the herd client can see"
+    subparser = subparsers.add_parser(
+        "info-roles",
+        parents=[common_parser],
+        help=desc,
+        description=desc,
+        conflict_handler="resolve",
+    )
+    subparser.set_defaults(func=main_info_roles)
+
     # $ herd function
     desc = "Add lambda function"
     subparser = subparsers.add_parser(
@@ -92,12 +122,12 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     subparser.add_argument(
-        "--role-name",
+        "--role-name", "--role",
         help="The name of the AWS IAM role to use for the lambda and api",
         default="herd-lambda-role",
     )
     subparser.add_argument(
-        "--api-name",
+        "--api-name", "--api", "-a",
         help="The name/id of the AWS api gateway",
         default="herd-lambda-api",
     )
@@ -107,7 +137,7 @@ def main():
         default="herd-lambda-api",
     )
     subparser.add_argument(
-        "--region-name",
+        "--region-name", "--region",
         help="The AWS region",
         default="",
     )

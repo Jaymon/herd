@@ -51,14 +51,22 @@ class ImportsTest(TestCase):
 
 
 class DependenciesTest(TestCase):
-    def test_stdlib(self):
-        for modpath in ["sys", "os", "os.path", "email"]:
-            d = Dependencies(modpath)
-            self.assertEqual(0, len(d))
+    def test_encoding(self):
+        m = testdata.create_module(contents=[
+            "# -*- coding: utf-8 -*-",
+            "from __future__ import unicode_literals, division, print_function, absolute_import",
+        ])
 
-    def test_site(self):
-        d = Dependencies("boto3")
-        self.assertLess(0, len(d))
+        d = Dependencies(m.path)
+
+#     def test_stdlib(self):
+#         for modpath in ["sys", "os", "os.path", "email"]:
+#             d = Dependencies(modpath)
+#             self.assertEqual(0, len(d))
+# 
+#     def test_site(self):
+#         d = Dependencies("boto3")
+#         self.assertLess(0, len(d))
 
     def test_local_module(self):
         m = testdata.create_module(contents=[
@@ -89,10 +97,10 @@ class DependenciesTest(TestCase):
         d = Dependencies("foo")
         self.assertLess(0, len(d))
 
-    def test_different_toplevel_package_name(self):
-        d = Dependencies("dateutil")
-        d2 = Dependencies("python-dateutil")
-        self.assertEqual(d.name, d2.name)
+#     def test_different_toplevel_package_name(self):
+#         d = Dependencies("dateutil")
+#         d2 = Dependencies("python-dateutil")
+#         self.assertEqual(d.name, d2.name)
 
 
 class StandardPackagesTest(TestCase):

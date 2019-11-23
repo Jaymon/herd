@@ -48,7 +48,7 @@ class Imports(set):
         node_iter.visit_ImportFrom = visit_ImportFrom
         #node_iter.generic_visit = generic_visit
 
-        node_iter.visit(ast.parse(body))
+        node_iter.visit(ast.parse(ByteString(body)))
 
 
 class Dependencies(set):

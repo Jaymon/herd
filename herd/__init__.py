@@ -2,7 +2,7 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 from .serverless import Function
 
