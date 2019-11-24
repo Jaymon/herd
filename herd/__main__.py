@@ -154,7 +154,8 @@ def main():
 
     # mess with logging
     if args.debug:
-        logger.setLevel(logging.DEBUG)
+        #logger.setLevel(logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
 
     code = args.func(args, environ)
     sys.exit(code or 0)

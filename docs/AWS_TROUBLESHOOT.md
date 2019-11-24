@@ -1,6 +1,8 @@
 # Amazon Web Services (AWS) Troubleshooting
 
-## IAM Roles
+## Permissions and Policies
+
+### IAM Roles
 
 Herd will attempt to create a role if one doesn't exist, that might fail with an error like this:
 
@@ -35,10 +37,24 @@ You can get around this error in two ways:
 
     You can verify your [boto3](https://github.com/boto/boto3) user can see your role by doing something like:
     
-    ```python
-    import boto3
+    ```
+    $ herd info-roles
+    ```
 
-    iam = boto3.client("iam")
 
-    for role in 
-    pout.v(iam.list_roles())
+### Lambda permissions
+
+If you get an error when herd attempts to create the lambda function:
+
+> botocore.exceptions.ClientError: An error occurred (AccessDeniedException) when calling the CreateFunction operation: User: arn:aws:iam::NNNN:user/XXXXXXX is not authorized to perform: lambda:CreateFunction on resource: arn:aws:lambda:REGION:NNNN:function:FUNCTION-NAME
+
+You can solve this by giving your IAM user the policy: `AWSLambdaFullAccess`.
+
+
+### API Gateway Permissions
+
+If you get this error when attempting to give your lambda function API Gateway access:
+
+> botocore.exceptions.ClientError: An error occurred (AccessDeniedException) when calling the CreateRestApi operation: User: arn:aws:iam::NNNN:user/XXXXXXX is not authorized to perform: apigateway:POST on resource: arn:aws:apigateway:REGION::/restapis
+
+You can solve this by giving your IAM user the policy: `AmazonAPIGatewayAdministrator`.

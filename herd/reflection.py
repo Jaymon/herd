@@ -9,11 +9,14 @@ from distutils import sysconfig
 import json
 import re
 import pkgutil
-
+import logging
 
 from .compat import *
-from .path import Filepath, Dirpath
+from .path import Filepath, Dirpath, Path
 from .utils import get_runtime
+
+
+logger = logging.getLogger(__name__)
 
 
 class Imports(set):
@@ -176,15 +179,31 @@ class SitePackage(Package):
         :param infopath: string, the directory path the the .dist-info folder
         :returns: the toplevel package name that scripts would import
         """
-        # https://setuptools.readthedocs.io/en/latest/formats.html#sources-txt-source-files-manifest
-        filepath = Filepath(infopath, "top_level.txt")
-        return [line.strip() for line in filepath]
+        ret = set()
+        infopath = Path.create(infopath)
+        if infopath.isfile():
+            names = cls._get_pypi_names(infopath)
+            for name in names:
+                p = Dirpath(infopath.dirname, name)
+                if p.exists():
+                    ret.add(name)
+
+                p = Filepath(infopath.dirname, name, ext="py")
+                if p.exists():
+                    ret.add(name)
+
+        else:
+            # https://setuptools.readthedocs.io/en/latest/formats.html#sources-txt-source-files-manifest
+            filepath = Filepath(infopath, "top_level.txt")
+            ret = set((line.strip() for line in filepath))
+
+        return ret
 
     @classmethod
     def _get_pypi_names(cls, infopath):
         m = re.match("^([0-9a-zA-Z_]+)", Dirpath(infopath).basename)
         name = m.group(1)
-        return [name, name.replace("_", "-")]
+        return set([name, name.replace("_", "-")])
 
     @classmethod
     def _get_semver_name(self, name):
@@ -197,22 +216,26 @@ class SitePackage(Package):
         return m.group(1)
 
     def __new__(cls, infopath):
-        infopath = Dirpath(infopath)
+        infopath = Path.create(infopath)
         basedir = infopath.dirname
 
         # find the actual real name of the package from all our options
+        name = ""
         names = cls._get_toplevel_names(infopath)
         for name in names:
             p = cls._find_path(name, basedir)
             if p:
                 break
 
+        if not name:
+            raise ValueError("{} does not correspond to a site package".format(infopath))
+
         instance = super(SitePackage, cls).__new__(cls, name, basedir)
         instance.infopath = infopath
         return instance
 
     def names(self):
-        return self._get_toplevel_names(self.infopath) + self._get_pypi_names(self.infopath)
+        return self._get_toplevel_names(self.infopath) & self._get_pypi_names(self.infopath)
 
     def requires(self):
         """returns the immediate defined dependencies for this package
@@ -232,7 +255,11 @@ class SitePackage(Package):
                     ret.add(self._get_semver_name(name))
 
         else:
-            txtpath = Filepath(self.infopath, "METADATA")
+            if self.infopath.isfile():
+                txtpath = self.infopath
+            else:
+                txtpath = Filepath(self.infopath, "METADATA")
+
             if txtpath.exists():
                 for line in txtpath:
                     if line.startswith("Requires-Dist"):
@@ -289,6 +316,8 @@ class Packages(dict):
     __delitem__ = pop
 
     def _add_packages(self, path):
+        ret = 0
+        path = Dirpath(path)
         if path.exists():
             for root_dir, dirs, files in path:
                 for basename in files:
@@ -296,12 +325,16 @@ class Packages(dict):
                         fp = Filepath(basename)
                         name = fp.fileroot
                         self[name] = self.package_class(name, root_dir)
+                        ret += 1
 
                 for name in dirs:
                     fp = Filepath(root_dir, name, "__init__.py")
                     if fp.exists():
                         self[String(name)] = self.package_class(name, root_dir)
+                        ret += 1
                 break
+
+        return ret
 
 
 class StandardPackages(Packages):
@@ -315,7 +348,9 @@ class StandardPackages(Packages):
             self[String(name)] = None
 
         path = Dirpath(sysconfig.get_python_lib(standard_lib=True))
-        self._add_packages(path)
+        count = self._add_packages(path)
+        if count > 0:
+            logger.debug("Standard packages found at: {}".format(path))
 
 
 class SitePackages(Packages):
@@ -324,13 +359,27 @@ class SitePackages(Packages):
     https://stackoverflow.com/a/6464112/5006
     """
     package_class = SitePackage
+
     def populate(self):
         for basedir in sys.path:
-            infopaths = glob.glob(os.path.join(basedir, "*.dist-info"))
-            for infopath in infopaths:
-                p = SitePackage(infopath)
-                for name in p.names():
-                    self[name] = p
+            infopaths = glob.glob(os.path.join(basedir, "*.*-info"))
+            if infopaths:
+                logger.debug("Site packages found at: {}".format(basedir))
+                for infopath in infopaths:
+                    try:
+                        p = SitePackage(infopath)
+                        for name in p.names():
+                            self[name] = p
+
+                    except ValueError:
+                        pass
+
+                # pick up any straggling packages that don't have *-info
+                # information directories (I'm looking at you pycrypto)
+                package_class = self.package_class
+                self.package_class = Package
+                self._add_packages(basedir)
+                self.package_class = package_class
 
 
 class LocalPackages(Packages):
@@ -340,9 +389,11 @@ class LocalPackages(Packages):
 
         for basedir in sys.path:
             if runtime_dir in basedir: continue
-            if glob.glob(os.path.join(basedir, "*.dist-info")): continue
+            if glob.glob(os.path.join(basedir, "*.*-info")): continue
 
             basedir = Dirpath(basedir)
-            self._add_packages(basedir)
+            count = self._add_packages(basedir)
+            if count > 0:
+                logger.debug("Local packages found at: {}".format(basedir))
 
 

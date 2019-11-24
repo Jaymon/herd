@@ -23,6 +23,15 @@ class Path(String):
     def fileroot(self):
         return self.basename
 
+    @classmethod
+    def create(cls, *args, **kwargs):
+        path = Filepath(*args, **kwargs)
+        if not os.path.isfile(path):
+            path = Dirpath(*args, **kwargs)
+            if not os.path.isdir(path):
+                raise ValueError("Path {} is neither a file or folder".format(path))
+        return path
+
     def __new__(cls, *args, **kwargs):
         path = os.path.join(*args)
         instance = super(Path, cls).__new__(cls, path)
@@ -30,6 +39,12 @@ class Path(String):
 
     def exists(self):
         return os.path.exists(self)
+
+    def isfile(self):
+        return os.path.isfile(self)
+
+    def isdir(self):
+        return os.path.isdir(self)
 
 
 class Dirpath(Path):
