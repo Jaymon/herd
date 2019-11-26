@@ -472,8 +472,18 @@ class Lambda(AWS):
         self.filepath.copy_to(Path(bundle_dir, self.filepath.basename))
 
         d = Dependencies(self.filepath)
+        pout.v(d)
+        pout.v(bundle_dir)
+
         for p in d:
             p.path.copy_to(Path(bundle_dir, p.path.basename))
+
+        # get rid of *.pyc files
+        for root, dirnames, filenames in bundle_dir:
+            for filename in filenames:
+                if filename.endswith(".pyc"):
+                    filepath = Filepath(root, filename)
+                    filepath.delete()
 
         logger.debug("Bundled lambda function to {}".format(bundle_dir))
         return bundle_dir.zip_to(Filepath(basedir, "lambda.zip"))

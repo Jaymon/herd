@@ -32,7 +32,6 @@ class Imports(set):
     def _find(self, body):
         # This is based on code from pout.reflect.Call._find_calls and
         # endpoints.reflection.ReflectClass.get_info
-
         def visit_Import(node):
             for name in node.names:
                 self.add(name.name.split(".")[0])
@@ -57,46 +56,52 @@ class Imports(set):
 class Dependencies(set):
     def __init__(self, filepath):
         self.filepath = Filepath(filepath)
+        self.resolve()
 
+    def resolve(self):
         standard_modules = StandardPackages()
         site_modules = SitePackages()
         local_modules = LocalPackages()
 
         im = Imports(self.filepath)
+        seen = set()
         for modulepath in im:
             self.update(self._resolve(
                 modulepath,
+                seen,
                 standard_modules,
                 site_modules,
                 local_modules
             ))
 
-    def _resolve(self, modulepath, standard_modules, site_modules, local_modules):
+    def _resolve(self, modulepath, seen, standard_modules, site_modules, local_modules):
         # we only want to resolve dependencies if this is not in the standard library
         module_name = modulepath.split(".")[0]
-
         ret = set()
+        if module_name not in seen:
+            if module_name not in self:
+                if module_name not in standard_modules:
+                    name = ""
+                    if module_name in site_modules:
+                        name = site_modules[module_name]
+                    else:
+                        if module_name in local_modules:
+                            name = local_modules[module_name]
 
-        if module_name not in standard_modules:
-            name = ""
-            if module_name in site_modules:
-                name = site_modules[module_name]
-            else:
-                if module_name in local_modules:
-                    name = local_modules[module_name]
+                    if name:
+                        ret.add(name)
+                        seen.add(module_name)
 
-            if name:
-                ret.add(name)
-                for require_modulepath in name.requires():
-                    ret.update(self._resolve(
-                        require_modulepath,
-                        standard_modules,
-                        site_modules,
-                        local_modules
-                    ))
+                        for require_modulepath in name.requires():
+                            #pout.v(name, require_modulepath, seen)
+                            ret.update(self._resolve(
+                                require_modulepath,
+                                seen,
+                                standard_modules,
+                                site_modules,
+                                local_modules
+                            ))
 
-        #pout.b(module_name)
-        #pout.v(name, ret)
         return ret
 
 
@@ -137,7 +142,24 @@ class Package(String):
         return [self]
 
     def requires(self):
-        return set()
+        ret = getattr(self, "_requires_set", None)
+        if ret is None:
+            ret = self._requires()
+
+            # remove itself as a dependency if present (I'm looking at you pycrypto)
+            ret.discard(self)
+            self._requires_set = ret
+
+        return ret
+
+    def _requires(self):
+        ret = set()
+
+        for m in self.modules():
+            im = Imports(m.filepath)
+            ret.update(im)
+
+        return ret
 
     def is_package(self):
         """returns True if this package is a directory"""
@@ -237,7 +259,7 @@ class SitePackage(Package):
     def names(self):
         return self._get_toplevel_names(self.infopath) & self._get_pypi_names(self.infopath)
 
-    def requires(self):
+    def _requires(self):
         """returns the immediate defined dependencies for this package
 
         this doesn't normalize the module name or anything
@@ -270,18 +292,20 @@ class SitePackage(Package):
                         if name:
                             ret.add(name)
 
+        ret.update(super(SitePackage, self)._requires())
         return ret
 
 
 class LocalPackage(Package):
-    def requires(self):
-        ret = set()
-
-        for m in self.modules():
-            im = Imports(m.filepath)
-            ret.update(im)
-
-        return ret
+    pass
+#     def requires(self):
+#         ret = set()
+# 
+#         for m in self.modules():
+#             im = Imports(m.filepath)
+#             ret.update(im)
+# 
+#         return ret
 
 
 class Packages(dict):
@@ -324,14 +348,17 @@ class Packages(dict):
                     if basename.endswith(".py"):
                         fp = Filepath(basename)
                         name = fp.fileroot
-                        self[name] = self.package_class(name, root_dir)
-                        ret += 1
+                        if name not in self:
+                            self[name] = self.package_class(name, root_dir)
+                            ret += 1
 
                 for name in dirs:
                     fp = Filepath(root_dir, name, "__init__.py")
                     if fp.exists():
-                        self[String(name)] = self.package_class(name, root_dir)
-                        ret += 1
+                        name = String(name)
+                        if name not in self:
+                            self[name] = self.package_class(name, root_dir)
+                            ret += 1
                 break
 
         return ret
@@ -377,7 +404,7 @@ class SitePackages(Packages):
                 # pick up any straggling packages that don't have *-info
                 # information directories (I'm looking at you pycrypto)
                 package_class = self.package_class
-                self.package_class = Package
+                self.package_class = LocalPackage
                 self._add_packages(basedir)
                 self.package_class = package_class
 

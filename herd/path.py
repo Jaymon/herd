@@ -68,6 +68,10 @@ class Dirpath(Path):
         # https://stackoverflow.com/a/25650295/5006
         return shutil.make_archive(dest_path, 'zip', self)
 
+    def delete(self):
+        """Remove this whole directory and all subdirectories and files in it"""
+        shutil.rmtree(self)
+
 
 class Tempdir(Dirpath):
     def __new__(cls, *args, **kwargs):
@@ -121,4 +125,8 @@ class Filepath(Path):
         with ZipFile(dest_path, 'w') as z:
             z.write(self)
         return dest_path
+
+    def delete(self):
+        """remove the file"""
+        os.unlink(self)
 

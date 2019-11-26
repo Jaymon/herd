@@ -84,7 +84,7 @@ def main():
 
     # some parsers can take an input string, this is the common argument for them
     common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument("--debug", "-d", action="store_true", help="More verbose output")
+    common_parser.add_argument("--debug", "-d", action="count", default=0, help="More verbose output")
 
     subparsers = parser.add_subparsers(dest="command", help="a sub command")
     subparsers.required = True # https://bugs.python.org/issue9253#msg186387
@@ -156,6 +156,10 @@ def main():
     if args.debug:
         #logger.setLevel(logging.DEBUG)
         logging.getLogger().setLevel(logging.DEBUG)
+        if args.debug < 2:
+            for logname in ["botocore", "boto3", "boto"]:
+                logging.getLogger().setLevel(logging.WARNING)
+
 
     code = args.func(args, environ)
     sys.exit(code or 0)

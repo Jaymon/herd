@@ -112,6 +112,12 @@ class StandardPackagesTest(TestCase):
 
 
 class SitePackagesTest(TestCase):
+    def test_setuptools(self):
+        s = SitePackages()
+        p = s["setuptools"]
+        pout.v(p)
+
+
     def test_print(self):
         self.skip_test()
         s1 = SitePackages()
