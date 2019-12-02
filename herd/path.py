@@ -6,6 +6,7 @@ import tempfile
 from distutils import dir_util
 import shutil
 from zipfile import ZipFile
+import glob
 
 from .compat import *
 
@@ -71,6 +72,13 @@ class Dirpath(Path):
     def delete(self):
         """Remove this whole directory and all subdirectories and files in it"""
         shutil.rmtree(self)
+
+    def glob(self, pattern):
+        return glob.glob(os.path.join(self, pattern))
+
+    def files(self):
+        for root_dir, dirs, files in self:
+            return files
 
 
 class Tempdir(Dirpath):

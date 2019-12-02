@@ -158,7 +158,7 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
         if args.debug < 2:
             for logname in ["botocore", "boto3", "boto"]:
-                logging.getLogger().setLevel(logging.WARNING)
+                logging.getLogger(logname).setLevel(logging.WARNING)
 
 
     code = args.func(args, environ)

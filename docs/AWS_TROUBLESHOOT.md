@@ -41,6 +41,13 @@ You can get around this error in two ways:
     $ herd info-roles
     ```
 
+## Cloudwatch
+
+To get log support you need a cloudwatch policy, it should look like:
+
+
+
+
 
 ### Lambda permissions
 

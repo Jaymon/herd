@@ -472,8 +472,6 @@ class Lambda(AWS):
         self.filepath.copy_to(Path(bundle_dir, self.filepath.basename))
 
         d = Dependencies(self.filepath)
-        pout.v(d)
-        pout.v(bundle_dir)
 
         for p in d:
             p.path.copy_to(Path(bundle_dir, p.path.basename))
