@@ -111,101 +111,6 @@ class Dependencies(set):
         return ret
 
 
-
-
-#     def resolve3(self, path):
-#         packages = Packages()
-#         seen = set()
-#         filepath = Filepath(path)
-#         if filepath.exists():
-#             self.update(self._resolve(filepath, packages, seen))
-# 
-#         else:
-#             # do we have a module path?
-#             try:
-#                 p = packages[path]
-#             except ValueError:
-#                 raise ValueError("Could not resolve path {}".format(path))
-# 
-#             else:
-#                 for sm in p.modules():
-#                     self.update(self._resolve(sm.filepath, packages, seen))
-# 
-#     def _resolve3(self, filepath, packages, seen):
-#         ret = set()
-#         im = Imports(filepath)
-#         for modulename in im:
-#             try:
-#                 p = packages[modulename]
-# 
-#             except KeyError as e:
-#                 logger.debug("Missing dependency {} for {}".format(modulename, filepath))
-# 
-#             else:
-#                 if p not in seen:
-#                     seen.add(p)
-#                     if not p.is_standard():
-#                         ret.add(p)
-#                         ret.update(self._resolve(p.filepath, packages, seen))
-# 
-#         return ret
-# 
-# 
-
-
-
-
-
-#     def resolve2(self):
-#         standard_modules = StandardPackages()
-#         site_modules = SitePackages()
-#         local_modules = LocalPackages()
-# 
-#         im = Imports(self.filepath)
-#         seen = set()
-#         for modulepath in im:
-#             self.update(self._resolve(
-#                 modulepath,
-#                 seen,
-#                 standard_modules,
-#                 site_modules,
-#                 local_modules
-#             ))
-# 
-#     def _resolve2(self, modulepath, seen, standard_modules, site_modules, local_modules):
-#         # we only want to resolve dependencies if this is not in the standard library
-#         module_name = modulepath.split(".")[0]
-#         ret = set()
-#         if module_name not in seen:
-#             if module_name not in self:
-#                 if module_name not in standard_modules:
-#                     name = ""
-#                     if module_name in site_modules:
-#                         name = site_modules[module_name]
-#                     else:
-#                         if module_name in local_modules:
-#                             name = local_modules[module_name]
-# 
-#                     if name:
-#                         ret.add(name)
-#                         seen.add(module_name)
-# 
-#                         for require_modulepath in name.requires():
-#                             #pout.v(name, require_modulepath, seen)
-#                             ret.update(self._resolve(
-#                                 require_modulepath,
-#                                 seen,
-#                                 standard_modules,
-#                                 site_modules,
-#                                 local_modules
-#                             ))
-# 
-#         return ret
-# 
-# 
-
-
-
 class Infopath(String):
     @property
     def top_level(self):
@@ -304,10 +209,6 @@ class Infopath(String):
         return ret
 
 
-
-
-
-
 class Package(String):
 
     @property
@@ -335,6 +236,7 @@ class Package(String):
     @classmethod
     def find_path(cls, name, basedir):
         ret = ""
+        name = String(name)
         name = name.replace(".", "/")
         p = Filepath(basedir, name, ext=".py")
         if p.exists():
@@ -353,7 +255,7 @@ class Package(String):
             # let's just try and find by ignoring case
             basedir = Dirpath(basedir)
             regex = re.compile(r"^{}(?:\.py)?$".format(name), re.I)
-            for root_dir, files, dirs in basedir:
+            for root_dir, dirs, files in basedir:
                 for basename in itertools.chain(files, dirs):
                     if regex.match(basename):
                         logger.debug("Found {} through case-insensitive search of {}".format(name, basedir))
@@ -361,7 +263,6 @@ class Package(String):
                         break
 
                 break
-
 
         return ret
 
@@ -401,6 +302,21 @@ class Package(String):
     def is_module(self):
         """returns True if this package is a module file"""
         return self.path.isfile() if self.path else False
+
+    def has_shared_library(self):
+        """Returns True if this package contains a shared library (.so) file"""
+        if self.path:
+            if self.path.isfile():
+                return self.path.ext == "so"
+
+            else:
+                for root_dir, dirs, files in self.path:
+                    for filename in files:
+                        fp = Filepath(filename)
+                        if fp.ext == "so":
+                            return True
+
+        return False
 
     def submodules(self):
         if self.is_package():
@@ -455,11 +371,6 @@ class Package(String):
         if infopath:
             ret = infopath.requires()
         return ret
-
-
-
-
-
 
 
 class Packages(dict):
@@ -588,344 +499,4 @@ class StandardPackages(Packages):
             raise KeyError(name)
 
         return ret
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class Package2(String):
-    @property
-    def filepath(self):
-        """always reteurns a filepath for the module, this could either be self.name.py
-        or __init__.py"""
-        p = self.path
-        if isinstance(p, Dirpath):
-            p = Filepath(p, "__init__.py")
-        return p
-
-    @property
-    def path(self):
-        """Returns the path for the module, this can be a directory or file"""
-        return self._find_path(self, self.basedir)
-
-    @classmethod
-    def _find_path(cls, name, basedir):
-        ret = ""
-        name = name.replace(".", "/")
-        p = Filepath(basedir, name, ext=".py")
-        if p.exists():
-            ret = p
-        else:
-            p = Dirpath(basedir, name)
-            if p.exists():
-                ret = p
-        return ret
-
-    def __new__(cls, name, basedir):
-        instance = super(Package, cls).__new__(cls, name)
-        instance.basedir = Dirpath(basedir)
-        return instance
-
-    def names(self):
-        return [self]
-
-    def requires(self):
-        ret = getattr(self, "_requires_set", None)
-        if ret is None:
-            ret = self._requires()
-
-            # remove itself as a dependency if present (I'm looking at you pycrypto)
-            ret.discard(self)
-            self._requires_set = ret
-
-        return ret
-
-    def _requires(self):
-        ret = set()
-
-        for m in self.modules():
-            im = Imports(m.filepath)
-            ret.update(im)
-
-        return ret
-
-    def is_package(self):
-        """returns True if this package is a directory"""
-        p = self._find_path(self, self.basedir)
-        return isinstance(p, Dirpath)
-
-    def is_module(self):
-        """returns True if this package is a module file"""
-        return not self.is_package()
-
-    def submodules(self):
-        if self.is_package():
-            for root_dir, dirs, files in self.path:
-                relative_dir = root_dir.replace(self.basedir, "").strip("/")
-                modpath = relative_dir.replace("/", ".")
-                if Filepath(root_dir, "__init__.py").exists():
-                    if modpath != self:
-                        yield Package(modpath, self.basedir)
-
-                    for basename in files:
-                        if basename.endswith(".py") and basename != "__init__.py":
-                            fp = Filepath(basename)
-                            name = ".".join([modpath, fp.fileroot])
-                            yield Package(name, self.basedir)
-
-    def modules(self):
-        """like .submodules() put will also yield self"""
-        yield self
-        for sm in self.submodules():
-            yield sm
-
-
-class SitePackage(Package2):
-    @classmethod
-    def _get_toplevel_names(cls, infopath):
-        """module_name (eg, python-dateutil) needs to read *.dist-info/top_level.txt
-        to get the actual name (eg, dateutil)
-
-        :param infopath: string, the directory path the the .dist-info folder
-        :returns: the toplevel package name that scripts would import
-        """
-        ret = set()
-        infopath = Path.create(infopath)
-        if infopath.isfile():
-            names = cls._get_pypi_names(infopath)
-            for name in names:
-                p = Dirpath(infopath.dirname, name)
-                if p.exists():
-                    ret.add(name)
-
-                p = Filepath(infopath.dirname, name, ext="py")
-                if p.exists():
-                    ret.add(name)
-
-        else:
-            # https://setuptools.readthedocs.io/en/latest/formats.html#sources-txt-source-files-manifest
-            filepath = Filepath(infopath, "top_level.txt")
-            ret = set((line.strip() for line in filepath))
-
-        return ret
-
-    @classmethod
-    def _get_pypi_names(cls, infopath):
-        m = re.match("^([0-9a-zA-Z_]+)", Dirpath(infopath).basename)
-        name = m.group(1)
-        return set([name, name.replace("_", "-")])
-
-    @classmethod
-    def _get_semver_name(self, name):
-        """removes things like the semver version
-
-        :param name: string, the complete package name with things like semver
-        :returns: the actual package name as pypi sees it
-        """
-        m = re.match("^([0-9a-zA-Z_-]+)", name.strip())
-        return m.group(1)
-
-    def __new__(cls, infopath):
-        infopath = Path.create(infopath)
-        basedir = infopath.dirname
-
-        # find the actual real name of the package from all our options
-        name = ""
-        names = cls._get_toplevel_names(infopath)
-        for name in names:
-            p = cls._find_path(name, basedir)
-            if p:
-                break
-
-        if not name:
-            raise ValueError("{} does not correspond to a site package".format(infopath))
-
-        instance = super(SitePackage, cls).__new__(cls, name, basedir)
-        instance.infopath = infopath
-        return instance
-
-    def names(self):
-        return self._get_toplevel_names(self.infopath) & self._get_pypi_names(self.infopath)
-
-    def _requires(self):
-        """returns the immediate defined dependencies for this package
-
-        this doesn't normalize the module name or anything
-
-        :returns: set, the required packages per configuration
-        """
-        ret = set()
-
-        jsonpath = Filepath(self.infopath, "metadata.json")
-        if jsonpath.exists():
-            json_d = json.loads(jsonpath.contents())
-
-            for d in json_d.get("run_requires", []):
-                for name in d.get("requires", []):
-                    ret.add(self._get_semver_name(name))
-
-        else:
-            if self.infopath.isfile():
-                txtpath = self.infopath
-            else:
-                txtpath = Filepath(self.infopath, "METADATA")
-
-            if txtpath.exists():
-                for line in txtpath:
-                    if line.startswith("Requires-Dist"):
-                        # TODO -- this line can have "extras == '...' info that
-                        # means this package is optional and might not be
-                        # installed
-                        name = self._get_semver_name(line.split(":")[1].strip())
-                        if name:
-                            ret.add(name)
-
-        ret.update(super(SitePackage, self)._requires())
-        return ret
-
-
-class LocalPackage(Package2):
-    pass
-#     def requires(self):
-#         ret = set()
-# 
-#         for m in self.modules():
-#             im = Imports(m.filepath)
-#             ret.update(im)
-# 
-#         return ret
-
-
-class Packages2(dict):
-    #instance = None
-
-    package_class = Package
-
-#     @classmethod
-#     def get_instance(cls, *args, **kwargs):
-#         """get the singleton"""
-#         if not cls.instance:
-#             cls.instance = cls(*args, **kwargs)
-#         return cls.instance
-
-    def __init__(self, *args, **kwargs):
-        self._readonly = False
-        super(Packages, self).__init__()
-        self.populate(*args, **kwargs)
-        self._readonly = True
-
-    def __setitem__(self, k, v):
-        if self._readonly:
-            raise NotImplementedError()
-        return super(Packages, self).__setitem__(k, v)
-
-    def pop(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    setdefault = pop
-    update = pop
-    clear = pop
-    __delitem__ = pop
-
-    def _add_packages(self, path):
-        ret = 0
-        path = Dirpath(path)
-        if path.exists():
-            for root_dir, dirs, files in path:
-                for basename in files:
-                    if basename.endswith(".py"):
-                        fp = Filepath(basename)
-                        name = fp.fileroot
-                        if name not in self:
-                            self[name] = self.package_class(name, root_dir)
-                            ret += 1
-
-                for name in dirs:
-                    fp = Filepath(root_dir, name, "__init__.py")
-                    if fp.exists():
-                        name = String(name)
-                        if name not in self:
-                            self[name] = self.package_class(name, root_dir)
-                            ret += 1
-                break
-
-        return ret
-
-
-class StandardPackages2(Packages2):
-    """The packages that are part of the python distribution, the standard library
-
-    https://stackoverflow.com/a/46441687/5006
-    """
-    def populate(self):
-        # https://stackoverflow.com/a/4927129/5006
-        for name in sys.builtin_module_names:
-            self[String(name)] = None
-
-        path = Dirpath(sysconfig.get_python_lib(standard_lib=True))
-        count = self._add_packages(path)
-        if count > 0:
-            logger.debug("Standard packages found at: {}".format(path))
-
-
-class SitePackages(Packages2):
-    """The packages found in things like the site-packages directory
-
-    https://stackoverflow.com/a/6464112/5006
-    """
-    package_class = SitePackage
-
-    def populate(self):
-        for basedir in sys.path:
-            infopaths = glob.glob(os.path.join(basedir, "*.*-info"))
-            if infopaths:
-                logger.debug("Site packages found at: {}".format(basedir))
-                for infopath in infopaths:
-                    try:
-                        p = SitePackage(infopath)
-                        for name in p.names():
-                            self[name] = p
-
-                    except ValueError:
-                        pass
-
-                # pick up any straggling packages that don't have *-info
-                # information directories (I'm looking at you pycrypto)
-                package_class = self.package_class
-                self.package_class = LocalPackage
-                self._add_packages(basedir)
-                self.package_class = package_class
-
-
-class LocalPackages(Packages2):
-    package_class = LocalPackage
-    def populate(self):
-        runtime_dir = "/{}".format(get_runtime())
-
-        for basedir in sys.path:
-            if runtime_dir in basedir: continue
-            if glob.glob(os.path.join(basedir, "*.*-info")): continue
-
-            basedir = Dirpath(basedir)
-            count = self._add_packages(basedir)
-            if count > 0:
-                logger.debug("Local packages found at: {}".format(basedir))
-
 

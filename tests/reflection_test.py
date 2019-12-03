@@ -165,6 +165,13 @@ class PackagesTest(TestCase):
         expected = set(["boto3", "sys", "os"])
         self.assertEqual(expected, p.requires())
 
+    def test_has_shared_library(self):
+        modpath = testdata.create_package(contents=[])
+        shared_library = testdata.create_file("foo.so", tmpdir=modpath.directory)
+
+        ps = Packages()
+        p = ps[modpath]
+        self.assertTrue(p.has_shared_library())
 
 
 class DependenciesTest(TestCase):

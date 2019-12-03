@@ -474,6 +474,8 @@ class Lambda(AWS):
         d = Dependencies(self.filepath)
 
         for p in d:
+            if p.has_shared_library():
+                logger.warning("Dependency {} has a shared library (.so file) and might not work in Lambda".format(p))
             p.path.copy_to(Path(bundle_dir, p.path.basename))
 
         # get rid of *.pyc files

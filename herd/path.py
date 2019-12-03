@@ -98,6 +98,11 @@ class Filepath(Path):
     def fileroot(self):
         return os.path.splitext(self.basename)[0]
 
+    @property
+    def ext(self):
+        bits = os.path.splitext(self.basename)
+        return bits[-1].lstrip(".").lower() if len(bits) > 1 else ""
+
     def __new__(cls, *args, **kwargs):
         if "ext" in kwargs:
             args = list(args)
