@@ -79,10 +79,32 @@ class EnvironParser(UnknownParser):
     def __init__(self, args):
         super(EnvironParser, self).__init__(args)
 
+        # UnknownParse always has array values, let's normalize that so values
+        # with only one item contain just that item instead of a list of length 1
         for k in list(self.keys()):
+            pout.v(k)
             if re.match(r"^[A-Z0-9_-]+$", k):
                 if len(self[k]) == 1:
-                    self[k] = self[k][0]
+                    v = self[k]
+                    pout.v(v)
+                    self[k] = v[0]
             else:
                 del self[k]
+
+        pout.v(self)
+
+
+class Extra(object):
+    def __init__(self, args):
+        self.environ = Environ()
+        self.options = {}
+
+        d = UnknownParser(args)
+        for k, v in d.items():
+            # is this en environment variable?
+            if re.match(r"^[A-Z0-9_-]+$", k):
+                self.environ[k] = v[0] if len(v) == 1 else v
+
+            else:
+                self.options[k] = v[0] if len(v) == 1 else v
 

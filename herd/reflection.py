@@ -34,9 +34,12 @@ class Imports(set):
         except SyntaxError as e:
             logger.debug("Failed to parse {}".format(filepath))
 
+        except TypeError as e:
+            # TypeError: compile() expected string without null bytes
+            logger.debug("Failed to parse binary file {}".format(filepath))
+
     def _find(self, body):
         lines = [l for l in body.splitlines(False)]
-
 
         # This is based on code from pout.reflect.Call._find_calls and
         # endpoints.reflection.ReflectClass.get_info
@@ -58,15 +61,32 @@ class Imports(set):
         node_iter.visit_ImportFrom = visit_ImportFrom
         #node_iter.generic_visit = generic_visit
 
+        # byte string to handle: https://stackoverflow.com/a/39142445/5006
         node_iter.visit(ast.parse(ByteString(body)))
 
 
 class Dependencies(set):
-    def __init__(self, path):
-        #self.filepath = Filepath(filepath)
-        self.resolve(path)
+    def __init__(self, path, ignore=None):
+        """Find external dependencies for path
 
-    def resolve(self, path):
+        external dependencies are dependencies that aren't part of the standard
+        library or built-in to the python version
+
+        :param path: string, the path to a module to check for dependencies
+        :param ignore: string|list, regex(es) to match against found imports. If
+            a match is found the import is ignored and not included in the final
+            set, it is also not checked for child dependencies
+        """
+        #self.filepath = Filepath(filepath)
+        self.resolve(path, ignore)
+
+    def resolve(self, path, ignore):
+        if ignore:
+            if isinstance(ignore, basestring):
+                ignore = [ignore]
+        else:
+            ignore = []
+
         packages = Packages()
         seen = set()
         filepath = Filepath(path)
@@ -74,7 +94,17 @@ class Dependencies(set):
             logger.debug("Checking imports for {}".format(filepath))
             im = Imports(filepath)
             for modulename in im:
-                self.update(self._resolve(modulename, packages, seen))
+                for regex in ignore:
+                    if re.search(regex, modulename, flags=re.I):
+                        logger.debug("Ignoring {} because it matched ignore regex {}".format(
+                            modulename,
+                            regex
+                        ))
+                        seen.add(modulename)
+                        break
+
+                if modulename not in seen:
+                    self.update(self._resolve(modulename, packages, seen))
 
         else:
             # do we have a module path?
@@ -470,6 +500,8 @@ class Packages(dict):
 
 
 class StandardPackages(Packages):
+    """A dictionary of python standard library packages/modules. If the requested
+    module is not part of the standard library then a KeyError is raised"""
     def __init__(self):
         super(StandardPackages, self).__init__()
 
@@ -485,9 +517,15 @@ class StandardPackages(Packages):
 
             try:
                 ret = self.package_class(name, basedir)
-
             except ValueError:
-                ret = None
+                # in a virtual environment this config value can be different
+                # than the configured python lib standard lib path retrieved
+                # above
+                basedir = Dirpath(sysconfig.get_config_var("BINLIBDEST"))
+                try:
+                    ret = self.package_class(name, basedir)
+                except ValueError:
+                    ret = None
 
         if not ret:
             for basedir in self.search_paths():

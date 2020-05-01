@@ -13,7 +13,8 @@ class Function(object):
         role_name="herd-lambda-role",
         api_name="herd-lambda-api",
         stage="DEFAULT",
-        region_name=""
+        region_name="",
+        **options
     ):
 
         region_name = Region(region_name)
@@ -35,7 +36,7 @@ class Function(object):
         api = ApiGateway(api_name, region_name=region_name)
         api.save()
 
-        self.url = api.add_lambda(func, stage=stage)
+        self.url = api.add_lambda(func, stage=stage, **options)
         self.api = api
         self.func = func
         self.role = role

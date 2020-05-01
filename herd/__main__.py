@@ -3,12 +3,13 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import argparse
 import logging
 import sys
+import os
 
 import boto3
 from captain import echo
 
 from herd.compat import *
-from herd.utils import EnvironParser, Environ
+from herd.utils import EnvironParser, Environ, Extra
 from herd.serverless import Function, Region
 from herd import __version__
 
@@ -18,7 +19,7 @@ logging.basicConfig(format="%(message)s", level=level, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 
-def main_info(args, environ):
+def main_info(args, extra):
     r = ""
     try:
         r = Region("")
@@ -38,15 +39,20 @@ def main_info(args, environ):
     if creds.access_key and creds.secret_key:
         logger.info("Amazon AWS access and secret keys were found")
 
-    if environ:
+    if extra.environ:
         logger.info("")
         logger.info("Environ parsed from command line:")
-        environ = Environ(environ)
-        for k, v in environ.items():
+        for k, v in extra.environ.items():
+            logger.info("\t{} = {}".format(k, v))
+
+    if extra.options:
+        logger.info("")
+        logger.info("Options parsed from command line:")
+        for k, v in extra.options.items():
             logger.info("\t{} = {}".format(k, v))
 
 
-def main_info_roles(args, environ):
+def main_info_roles(args, extra):
     """print out all the iam roles the herd client can see"""
     iam = boto3.client("iam")
     roles = iam.list_roles()
@@ -64,14 +70,15 @@ def main_info_roles(args, environ):
 #         echo.table(
 
 
-def main_function(args, environ):
+def main_function(args, extra):
     func = Function(
         filepath=args.filepaths[0],
-        environ=environ,
+        environ=extra.environ,
         role_name=args.role_name,
         api_name=args.api_name,
         stage=args.stage,
         region_name=args.region_name,
+        **extra.options
     )
 
     logger.info("Function {} available at url: {}".format(func.func.name, func.url))
@@ -133,13 +140,13 @@ def main():
     )
     subparser.add_argument(
         "--stage", "-s",
-        help="The staging environment name (eg, DEV, STAGING, PROD)",
-        default="herd-lambda-api",
+        help="The staging environment name (eg, DEFAULT, DEV, STAGING, PROD)",
+        default="DEFAULT",
     )
     subparser.add_argument(
         "--region-name", "--region",
         help="The AWS region",
-        default="",
+        default=os.environ.get("AWS_DEFAULT_REGION", ""),
     )
     subparser.add_argument(
         "filepaths",
@@ -150,7 +157,7 @@ def main():
     subparser.set_defaults(func=main_function)
 
     args, unknown_args = parser.parse_known_args()
-    environ = EnvironParser(unknown_args)
+    extra = Extra(unknown_args)
 
     # mess with logging
     if args.debug:
@@ -160,8 +167,7 @@ def main():
             for logname in ["botocore", "boto3", "boto"]:
                 logging.getLogger(logname).setLevel(logging.WARNING)
 
-
-    code = args.func(args, environ)
+    code = args.func(args, extra)
     sys.exit(code or 0)
 
 

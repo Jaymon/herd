@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class Description(String):
     def __new__(cls, val="", encoding="UTF-8"):
-        val = String(val)
+        val = String(val) if val else ""
         # 'description' failed to satisfy constraint: Member must have length less than or equal to 256
         if len(val) > 256:
             val = val[:252] + "..."
@@ -261,7 +261,7 @@ class ApiGateway(AWS):
 
         return
 
-    def add_lambda(self, func, stage="DEV"):
+    def add_lambda(self, func, stage="DEV", **options):
         """
 
         :param stage: string, the environment name (eg, DEV, PROD, STAGE, TEST)
@@ -297,7 +297,7 @@ class ApiGateway(AWS):
                 restApiId=api['id'],
                 resourceId=resource['id'],
                 httpMethod='ANY',
-                authorizationType='NONE'
+                authorizationType=options.get("authorizationType", 'NONE'),
             )
 
         except client.exceptions.ConflictException as e:
@@ -438,11 +438,17 @@ class Lambda(AWS):
         self._region_name = region_name
         self.role = role
         self.environ = Environ(environ or {})
+        self.ignore_dependencies = [
+            r"^boto3(?:\.|$)",
+            r"^botocore(?:\.|$)",
+            r"^boto(?:\.|$)",
+        ]
 
         module = runpy.run_path(filepath)
         for n, v in module.items():
             if inspect.isfunction(v):
                 # !!! py2 only
+                # TODO: add py3 support
                 #pout.v(inspect.signature(v))
                 s = inspect.getargspec(v)
                 if len(s[0]) == 2 and s[0][0] == "event" and s[0][1] == "context":
@@ -471,7 +477,7 @@ class Lambda(AWS):
 
         self.filepath.copy_to(Path(bundle_dir, self.filepath.basename))
 
-        d = Dependencies(self.filepath)
+        d = Dependencies(self.filepath, self.ignore_dependencies)
 
         for p in d:
             if p.has_shared_library():

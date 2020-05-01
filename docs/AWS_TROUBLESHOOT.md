@@ -45,7 +45,29 @@ You can get around this error in two ways:
 
 To get log support you need a cloudwatch policy, it should look like:
 
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
+        }
+    ]
+}
+```
 
+In the [IAM dashboard](https://console.aws.amazon.com/iam/home), you could click roles, then click the role you use for herd, then under the Permissions tab, attach a policy with the above json to enable cloudwatch logging support.
+
+
+### Search
+
+* lambda cloudwatch logs - [Understand Lambda Logging and Unlock CloudWatch Logs](https://medium.com/@zaccharles/understand-lambda-logging-and-unlock-cloudwatch-logs-58d75aea2f9c)
 
 
 

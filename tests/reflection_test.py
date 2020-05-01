@@ -203,6 +203,29 @@ class DependenciesTest(TestCase):
         d = Dependencies(m.path)
         self.assertLess(0, len(d))
 
+    def test_standard(self):
+        """make sure standard modules are ignored"""
+        m = testdata.create_module(contents=[
+            "import json",
+            "import os",
+            "import base64",
+        ])
+
+        d = Dependencies(m.path)
+        self.assertEqual(0, len(d))
+
+    def test_ignore(self):
+        m = testdata.create_module(contents=[
+            "import os",
+            "import json",
+            "import boto3",
+            "import base64",
+            "from botocore.exceptions import ClientError",
+        ])
+
+        d = Dependencies(m.path, ["^boto3(?:\.|$)", "^botocore(?:\.|$)"])
+        self.assertEqual(0, len(d))
+
     def test_local_package(self):
         path = testdata.create_modules({
             "foo": [
@@ -234,6 +257,12 @@ class StandardPackagesTest(TestCase):
 
         for modpath in ["sys", "os", "email"]:
             self.assertTrue(modpath in s, modpath)
+
+    def test_modules(self):
+        """Make sure .py modules are found"""
+        s = StandardPackages()
+        p = s["json"]
+        self.assertTrue(p is not None)
 
 
 # class SitePackagesTest(TestCase):
